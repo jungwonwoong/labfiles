@@ -1,0 +1,168 @@
+#!/usr/bin/env node
+
+/**
+ * Module dependencies.
+ */
+
+ var app = require('../app');
+ var debug = require('debug')('cctv:server');
+ var http = require('http');
+ 
+ /**
+  * Get port from environment and store in Express.
+  */
+ 
+ var port = normalizePort(process.env.PORT || '3000');
+ app.set('port', port);
+ 
+ /**
+  * Create HTTP server.
+  */
+ 
+ var server = http.createServer(app);
+ const io = require('socket.io')(server);
+ const Datastore = require('nedb');
+ const db = new Datastore({ filename: `db/${Date.now()}.db`, autoload: true });
+ const fs = require('fs');
+ const dir = '\\\\192.168.0.2\\Users\\wjddn\\Desktop\\data\\';
+ const list = fs.readdirSync(dir).map(filename => {
+   return {
+     filename: filename,
+     mtime: fs.statSync(dir + filename).mtime
+   }
+ })
+ list.sort((a,b) => b.mtime - a.mtime)
+
+
+var xpos = '';
+var ypos = '';
+var isstop = false;
+io.of('/video').on('connection', (socket) => {
+
+
+  socket.on('videocamera', (image) => {
+    var frame = Buffer.from(image, 'base64').toString();
+    io.of('/user').emit('video', frame)
+  })
+  socket.on('posdata', (data) => {
+    if (data.x != '' && data.y != '') {
+      xpos = data.x;
+      ypos = data.y;
+    }
+    io.of('/user').emit('position', {x:xpos,y:ypos})
+  })
+  socket.on('disconnect', function () {
+    console.log("disconnect happen!!!")
+    try {
+    }
+    catch (err) {
+      return;
+    }
+  });
+})
+
+  var check00 = '';
+  var pickup = setInterval(() => {
+    if (!isstop) {
+      fs.readFile(dir + list[0].filename, 'utf-8', (err, data) => {
+        if (err) throw err;
+        var Tarray = data.toString().split("\n");
+        var Carray = Tarray[Tarray.length - 2].toString().split(',');
+        if (check00 != Carray[0]) {
+          db.insert({
+             _id: Date.now(), 
+             x: xpos, 
+             y: ypos, 
+             temp: Carray[1],
+             ph: Carray[2],
+             o2: Carray[4],
+             })
+        }
+        check00 = Carray[0];
+      })
+    }
+    else {
+      clearInterval(pickup)
+    }
+  }, 2000);
+
+
+
+ io.of('/user').on('connection', (socket) => {
+   console.log('클라이언트와 연결됨');
+   socket.emit('test', '클라이언트 반갑다');
+   //socket.emit('position', {x:xpos, y:ypos})
+   socket.on('vOnOff', (data) => {   
+     console.log(data)
+       io.of('/video').emit('stopvideo', data)
+   })
+ })
+ /**
+  * Listen on provided port, on all network interfaces.
+  */
+  
+ server.listen(port);
+ server.on('error', onError);
+ server.on('listening', onListening);
+ 
+ 
+ /**
+  * Normalize a port into a number, string, or false.
+  */
+ 
+ function normalizePort(val) {
+   var port = parseInt(val, 10);
+ 
+   if (isNaN(port)) {
+     // named pipe
+     return val;
+   }
+ 
+   if (port >= 0) {
+     // port number
+     return port;
+   }
+ 
+   return false;
+ }
+ 
+ /**
+  * Event listener for HTTP server "error" event.
+  */
+ 
+ function onError(error) {
+   if (error.syscall !== 'listen') {
+     throw error;
+   }
+ 
+   var bind = typeof port === 'string'
+     ? 'Pipe ' + port
+     : 'Port ' + port;
+ 
+   // handle specific listen errors with friendly messages
+   switch (error.code) {
+     case 'EACCES':
+       console.error(bind + ' requires elevated privileges');
+       process.exit(1);
+       break;
+     case 'EADDRINUSE':
+       console.error(bind + ' is already in use');
+       process.exit(1);
+       break;
+     default:
+       throw error;
+   }
+ }
+ 
+ /**
+  * Event listener for HTTP server "listening" event.
+  */
+ 
+ function onListening() {
+   var addr = server.address();
+   var bind = typeof addr === 'string'
+     ? 'pipe ' + addr
+     : 'port ' + addr.port;
+   debug('Listening on ' + bind);
+ }
+ 
